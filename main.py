@@ -27,7 +27,7 @@ load_dotenv()
 # --- НАСТРОЙКИ ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 MAIN_ADMIN_ID = int(os.getenv("MAIN_ADMIN_ID", "7697803488"))
-PAYMENT_ME = os.getenv("PAYMENT_ME", "Richiryan02")
+PAYMENT_ME = os.getenv("PAYMENT_ME", "spicegoods")
 DEFAULT_HOLDER = "@Richiryan02"
 
 # --- ПРЕМИУМ-ЭМОДЗИ ---
@@ -572,7 +572,7 @@ async def admin_close_temp(callback: types.CallbackQuery):
     set_setting('temp_access', "0")
     msg_id = get_setting('temp_access_msg_id')
     if msg_id and msg_id != "0":
-        admin = get_setting('temp_access_admin') or "@Richiryan02"
+        admin = get_setting('temp_access_admin') or "@spicegoods"
         hours = get_setting('temp_access_hours') or "0"
         new_text = f"Администратор {admin} открыл доступ на {hours} часов.\nБот - <s>@exit12_bot</s>\nДоступ - ❌"
         try:
@@ -942,8 +942,45 @@ async def process_accept(callback: types.CallbackQuery):
         [InlineKeyboardButton(text="Передать NFT", url=send_gift_url, icon_custom_emoji_id=TRANSFER_EMOJI_ID)]
     ])
 
-    try: await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML", link_preview_options=preview)
-    except Exception: pass
+    # --- ИСПРАВЛЕНИЕ ОШИБКИ РЕДАКТИРОВАНИЯ В БИЗНЕС-ЧАТЕ ---
+    try:
+        if callback.message.business_connection_id:
+            await bot.edit_message_text(
+                chat_id=callback.message.chat.id,
+                message_id=callback.message.message_id,
+                text=text,
+                reply_markup=kb,
+                parse_mode="HTML",
+                link_preview_options=preview,
+                business_connection_id=callback.message.business_connection_id
+            )
+        else:
+            await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML", link_preview_options=preview)
+    except Exception as e:
+        log.error(f"Ошибка изменения оффера: {e}")
+        # Если не удалось изменить (например, сообщение слишком старое или проблема с превью),
+        # удаляем старое и отправляем новое.
+        try:
+            if callback.message.business_connection_id:
+                await bot.delete_message(
+                    chat_id=callback.message.chat.id,
+                    message_id=callback.message.message_id,
+                    business_connection_id=callback.message.business_connection_id
+                )
+                await bot.send_message(
+                    chat_id=callback.message.chat.id,
+                    text=text,
+                    reply_markup=kb,
+                    parse_mode="HTML",
+                    link_preview_options=preview,
+                    business_connection_id=callback.message.business_connection_id
+                )
+            else:
+                await callback.message.delete()
+                await callback.message.answer(text, reply_markup=kb, parse_mode="HTML", link_preview_options=preview)
+        except Exception as e2:
+            log.error(f"Ошибка fallback отправки: {e2}")
+
     await callback.answer("Вы приняли предложение!")
 
 @dp.callback_query(F.data == "recv_stars")
